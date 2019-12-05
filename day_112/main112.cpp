@@ -1,0 +1,77 @@
+/*
+KMeans 图像分割 – 背景替换
+KMeans可以实现简单的证件照片的背景分割提取与替换，大致可以分为如下几步实现
+1.	读入图像建立KMenas样本
+2.	使用KMeans图像分割，指定指定分类数目
+3.	取左上角的label得到背景cluster index
+4.	生成mask区域，然后高斯模糊进行背景替换
+
+PS:继续更新！请大家支持
+*/
+
+#include <opencv2/opencv.hpp>
+#include <iostream>
+
+using namespace cv;
+using namespace std;
+
+int main(int argc, char** argv) {
+	Mat src = imread("../images/toux.jpg");
+	if (src.empty()) {
+		printf("could not load image...\n");
+		return -1;
+	}
+	namedWindow("input image", WINDOW_AUTOSIZE);
+	imshow("input image", src);
+
+	int width = src.cols;
+	int height = src.rows;
+	int dims = src.channels();
+
+	// 初始化定义
+	int sampleCount = width * height;
+	int clusterCount = 3;
+	Mat labels;
+	Mat centers;
+
+	// RGB 数据转换到样本数据
+	Mat sample_data = src.reshape(3, sampleCount);
+	Mat data;
+	sample_data.convertTo(data, CV_32F);
+
+	// 运行K-Means
+	TermCriteria criteria = TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 10, 0.1);
+	kmeans(data, clusterCount, labels, criteria, clusterCount, KMEANS_PP_CENTERS, centers);
+
+	Mat mask = Mat::zeros(src.size(), CV_8UC1);
+	int index = labels.at<int>(0, 0);
+	labels = labels.reshape(1, height);
+	for (int row = 0; row < height; row++) {
+		for (int col = 0; col < width; col++) {
+			int c = labels.at<int>(row, col);
+			if (c == index) {
+				mask.at<uchar>(row, col) = 255;
+			}
+		}
+	}
+
+	Mat se = getStructuringElement(MORPH_RECT, Size(3, 3), Point(-1, -1));
+	dilate(mask, mask, se);
+	GaussianBlur(mask, mask, Size(5, 5), 0);
+	Mat result = Mat::zeros(src.size(), CV_8UC3);
+	for (int row = 0; row < height; row++) {
+		for (int col = 0; col < width; col++) {
+			float w1 = mask.at<uchar>(row, col) / 255.0;
+			Vec3b bgr = src.at<Vec3b>(row, col);
+			bgr[0] = w1 * 255.0 + bgr[0] * (1.0 - w1);
+			bgr[1] = w1 * 0 + bgr[1] * (1.0 - w1);
+			bgr[2] = w1 * 255.0 + bgr[2] * (1.0 - w1);
+			result.at<Vec3b>(row, col) = bgr;
+		}
+	}
+	imshow("KMeans-image-Demo", result);
+	waitKey(0);
+	destroyAllWindows();
+
+	return 0;
+}
